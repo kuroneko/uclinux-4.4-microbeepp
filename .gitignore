@@ -1,0 +1,21 @@
+# dervied config objects
+/Kconfig
+.config
+.config.old
+.oldconfig
+auto.conf
+
+/autoconf.h
+/config.arch
+/config/autoconf.h
+/config/kconfig/conf
+/config/kconfig/mconf
+/lib/Kconfig.auto
+/lib/Makefile.auto
+/lib/uClibc
+/user/Kconfig.auto
+/user/Makefile.auto
+/vendors/Kconfig
+
+# intermediate/build objects
+*.o
