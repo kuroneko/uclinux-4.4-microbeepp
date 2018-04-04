@@ -13,9 +13,18 @@ auto.conf
 /lib/Kconfig.auto
 /lib/Makefile.auto
 /lib/uClibc
+/linux/include/linux/autoconf.h
 /user/Kconfig.auto
 /user/Makefile.auto
 /vendors/Kconfig
 
+# build trees
+/images
+/romfs
+/staging
+
 # intermediate/build objects
 *.o
+*.a
+*.gdb
+.sgbuilt_*
