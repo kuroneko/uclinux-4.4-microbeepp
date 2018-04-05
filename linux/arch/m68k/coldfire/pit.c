@@ -27,10 +27,24 @@
 
 /***************************************************************************/
 
+#ifdef CONFIG_MICROBEEPP
+/* The Premium Plus's memory access is over the FlexBus and is quite slow.
+ * use a slower system clock otherwise the timer fires before the context
+ * swich is complete.
+*/
+#define MCF_CLK_DIVISOR	8
+#endif
+
+#ifndef MCF_CLK_DIVISOR
+#define MCF_CLK_DIVISOR 64
+#endif
+
 /*
  *	By default use timer1 as the system clock timer.
  */
-#define	FREQ	((MCF_CLK / 2) / 64)
+
+#define	FREQ	((MCF_CLK / 2) / MCF_CLK_DIVISOR)
+
 #define	TA(a)	(MCFPIT_BASE1 + (a))
 #define PIT_CYCLES_PER_JIFFY (FREQ / HZ)
 
