@@ -233,6 +233,9 @@ void __init setup_arch(char **cmdline_p)
 #if defined(CONFIG_FRAMEBUFFER_CONSOLE) && defined(CONFIG_DUMMY_CONSOLE)
 	conswitchp = &dummy_con;
 #endif
+#if defined(CONFIG_MBEE_CONSOLE)
+	conswitchp = &mbee_con;
+#endif
 
 	/*
 	 * Give all the memory to the bootmap allocator, tell it to put the
