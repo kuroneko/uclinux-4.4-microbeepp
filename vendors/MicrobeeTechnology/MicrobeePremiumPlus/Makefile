@@ -8,8 +8,7 @@ ELFIMAGE = $(IMAGEDIR)/image.elf
 
 DIRS = 
 
-ROMFS_DIRS = bin dev etc etc/config etc/default home lib mnt proc usr var \
-             home/httpd home/httpd/cgi-bin
+ROMFS_DIRS = bin dev etc etc/config etc/default home lib mnt proc usr var
 
 DEVICES = \
 	tty,c,5,0	console,c,5,1	cua0,c,5,64	cua1,c,5,65 \
@@ -41,20 +40,6 @@ DEVICES = \
 	qspi8,c,126,8	qspi9,c,126,9	qspi10,c,126,10	qspi11,c,126,11	\
 	qspi12,c,126,12	qspi13,c,126,13	qspi14,c,126,14 \
 	\
-	ipsec,c,36,10 \
-	ppp,c,108,0 \
-	mtd0,c,90,0	mtdr0,c,90,1	mtdblock0,b,31,0	\
-	mtd1,c,90,2	mtdr1,c,90,3	mtdblock1,b,31,1	\
-	mtd2,c,90,4	mtdr2,c,90,5	mtdblock2,b,31,2	\
-	mtd3,c,90,6	mtdr3,c,90,7	mtdblock3,b,31,3	\
-	mtd4,c,90,8	mtdr4,c,90,9	mtdblock4,b,31,4	\
-	mtd5,c,90,10	mtdr5,c,90,11	mtdblock5,b,31,5	\
-	mtd6,c,90,12	mtdr6,c,90,13	mtdblock6,b,31,6 	\
-	mtd7,c,90,14	mtdr7,c,90,15	mtdblock7,b,31,7	\
-	mtd8,c,90,16	mtdr8,c,90,17	mtdblock8,b,31,8	\
-	mtd9,c,90,18	mtdr9,c,90,19	mtdblock9,b,31,9	\
-	mtd10,c,90,20	mtdr10,c,90,21	mtdblock10,b,31,10 \
-	\
 	mmc,b,121,0 mmc1,b,121,1 mmc2,b,121,2 mmc3,b,121,3
 
 all:
@@ -79,18 +64,17 @@ romfs:
 	$(ROMFSINST) -s /var/tmp /tmp
 	$(ROMFSINST) ../romfs /
 	$(ROMFSINST) motd /etc/motd
-	$(ROMFSINST) ../../Generic/httpd /home/httpd
-	$(ROMFSINST) ../../Generic/big/inittab /etc/inittab
 	echo "$(VERSIONSTR) -- " `date` > $(ROMFSDIR)/etc/version
 
 image:
 	[ -d $(IMAGEDIR) ] || mkdir -p $(IMAGEDIR)
-	genromfs -v -V "ROMdisk" -f $(ROMFSIMG) -d $(ROMFSDIR)
+	#genromfs -v -V "ROMdisk" -f $(ROMFSIMG) -d $(ROMFSDIR)
 	$(CROSS)objcopy -O binary $(ROOTDIR)/$(LINUXDIR)/linux \
 			$(IMAGEDIR)/linux.bin
-	cat $(IMAGEDIR)/linux.bin $(ROMFSIMG) > $(IMAGE)
+	#cat $(IMAGEDIR)/linux.bin $(ROMFSIMG) > $(IMAGE)
+	cat $(IMAGEDIR)/linux.bin > $(IMAGE)
 	$(ROOTDIR)/tools/cksum -b -o 2 $(IMAGE) >> $(IMAGE)
-	[ -n "$(NO_BUILD_INTO_TFTPBOOT)" ] || cp $(IMAGE) /tftpboot
+	#[ -n "$(NO_BUILD_INTO_TFTPBOOT)" ] || cp $(IMAGE) /tftpboot
 	BSS=`$(CROSS)objdump --headers $(ROOTDIR)/$(LINUXDIR)/linux | \
 	  grep .bss` ; \
 	ADDR=`set -- $${BSS} ; echo 0x$${4}` ; \
