@@ -6,35 +6,72 @@
  * Copyright (C) 2012 Microbee Technology
  */
 
+/*
+ * The Microbee Console is an interesting mishmash of old and new hardware.
+ *
+ * It uses a simple character generator using a 6545 CRTC and some SRAM
+ * that is local to the Z80 on the mainboard.  There are 8x16 and 6x10 fonts
+ * in roms directly coupled to the character generator logic, as well as a
+ * few KB of PCG where custom character-sets can be loaded.
+ *
+ * Access to the character generator is arbitrated through an FPGA attached
+ * to the mini-FlexBus and configured via the flexbus1 registers.
+ *
+ * It's extremely flexable due to it's design - the original Microbees
+ * actually drew all their graphics modes by manipulating the PCG memory
+ * and writing PCG characters into the screen memory as necessary.
+ *
+ * Whilst classic VGA can only have one "font" on screen at a time, the
+ * microbee can render characters from any PCG bank or the enabled font
+ * ROM simultaneously.
+ *
+ * There's a few issues, however:
+ *
+ * Whilst hardware windowing/scrollign should be possible with the hardware
+ * there's insufficient RAM available to the CRTC to make it happen in 80x24
+ * mode.
+ *
+ * The MiniFlexBus is slow to begin with, and the arbitration with the 
+ * FPGA doesn't help things much either.  Console IO is slow and must
+ * inhibit interrupts and any kind of preemption until the IOP is 
+ * complete.
+ *
+ * Another headache is that where the VGA-console only has 16 bits of
+ * character/attribute data per character cell, the microbee console has
+ * 20 bits: 7 bits character, 1 bit PCG enable, 8 bits colour (fg & bg), 
+ * 4 bits PCG bank.  We can't actually store the entire console state
+ * in the standard off-screen buffer, so PCG is completely ignored right
+ * now.
+*/
+
 #include <linux/console.h>
 #include <linux/console_struct.h>
 #include <linux/irqflags.h>
 #include <asm/io.h>
 
 #define MBPP_ALPHA_PLUS_REG 	0x01FC01C
-#define MBPP_COLOR_PORT_REG		0x01FC008
-#define MBPP_FONT_ROM_REG 		0x01FC00B
-#define MBPP_CRTC_ADDR_REG		0x01FC00C
-#define MBPP_CRTC_DATA_REG		0x01FC00D
+#define MBPP_COLOR_PORT_REG	0x01FC008
+#define MBPP_FONT_ROM_REG 	0x01FC00B
+#define MBPP_CRTC_ADDR_REG	0x01FC00C
+#define MBPP_CRTC_DATA_REG	0x01FC00D
 
 #define MBPP_SCREEN_RAM_START	0x01FF000
-#define MBPP_ATTR_RAM_START		0x01FF000
-#define MBPP_PCG_RAM_START		0x01FF800
+#define MBPP_ATTR_RAM_START	0x01FF000
+#define MBPP_PCG_RAM_START	0x01FF800
 
 #define MCF_FLEX_CSAR1_OFFSET	0x8C
 #define MCF_FLEX_CSMR1_OFFSET	0x90
 #define MCF_FLEX_CSCR1_OFFSET	0x94
 
-static u32 original_cscr1;
+#define MCF_CSCR_WS_MASK	0x0000FC00
+#define MCF_CSCR_WS_SHIFT	10
 
-#define MCF_CSCR_WS_MASK		0x0000FC00
-#define MCF_CSCR_WS_SHIFT		10
-
-#define CRTC_CURSOR_START		10
-#define CRTC_CURSOR_END			11
+#define CRTC_CURSOR_START	10
+#define CRTC_CURSOR_END		11
 #define CRTC_CURSOR_POSITION_H	14
 #define CRTC_CURSOR_POSITION_L	15
 
+static u32 original_cscr1;
 static unsigned long 	irq_flags;
 
 static inline void mbee_con_set_cscr(u32 new_cscr1)
@@ -51,13 +88,14 @@ static inline void mbee_con_reset_ws()
 	local_irq_restore(irq_flags);
 }
 
-//300ns Access time
+/* 300ns Access time */
 #define MBPP_CSCR_SLOWIO		0x00d40
-	//0x155D40;	//0x005140;
+/* //0x155D40;	//0x005140; */
 
-//775ns (yes, I know... its horrible, but cant do anything about that...) Access time
+/* 775ns (yes, I know... its horrible, but cant do anything about that...)
+   Access time */
 #define MBPP_CSCR_SLOWACCESS	0x00d40
-	//0x1FFD40;
+/*	//0x1FFD40; */
 
 #define SCREEN_WIDTH		80
 #define SCREEN_HEIGHT		24
@@ -66,7 +104,7 @@ static inline void mbee_con_reset_ws()
 /*
    font notes:
      in 64x16, characters are 8x16
-     in 80x24, they must be 6x10 with a total of 264 scanlines.
+     in 80x24, they are 6x10 with a total of 264 scanlines.
 */
 
 static const char *mbee_console_startup(void)
@@ -92,8 +130,8 @@ static void mbee_console_deinit(struct vc_data *c)
 {
 }
 
-static void mbee_console_clear(struct vc_data *vc, int sy, int sx, int height,
-		int width)
+static void mbee_console_do_clear(int sy, int sx, int height, int width,
+		u8 attr_byte, u8 color_byte, u8 screen_byte)
 {
 	u8	save_ap_reg;
 	
@@ -102,25 +140,32 @@ static void mbee_console_clear(struct vc_data *vc, int sy, int sx, int height,
 	mbee_con_set_cscr(MBPP_CSCR_SLOWIO);
 	save_ap_reg = __raw_readb(MBPP_ALPHA_PLUS_REG);
 
-	// reset the attribute (PCG Bank)
-	__raw_writeb(MBPP_ALPHA_PLUS_REG, save_ap_reg|0x10); //set the Attribute ram access bit..
+	/* reset the attribute (PCG Bank) */
+	__raw_writeb(MBPP_ALPHA_PLUS_REG, save_ap_reg|0x10); /* set the Attribute ram access bit.. */
 	for (cy = sy; cy < sy+height, cy++) {
-		memset_io(MBPP_ATTR_RAM_START + (cy * SCREEN_WIDTH) + sx, 0, width);
+		memset_io(MBPP_ATTR_RAM_START + (cy * SCREEN_WIDTH) + sx, attr_byte, width);
 	}
-	__raw_writeb(MBPP_ALPHA_PLUS_REG, save_ap_reg&~0x10); //set the Attribute ram access bit..
+	__raw_writeb(MBPP_ALPHA_PLUS_REG, save_ap_reg&~0x10); /* set the Attribute ram access bit.. */
 
-	// reset the colour
+	/* reset the colour */
 	__raw_writeb(MBPP_COLOR_PORT_REG, 0x40);
 	for (cy = sy; cy < sy+height, cy++) {
-		memset_io(MBPP_PCG_RAM_START + (cy * SCREEN_WIDTH) + sx, vc->vc_attr, width);
+		memset_io(MBPP_PCG_RAM_START + (cy * SCREEN_WIDTH) + sx, color_byte, width);
 	}
 	__raw_writeb(MBPP_COLOR_PORT_REG, 0x0);
 
-	// fill the area with blanks.
+	/* fill the area with blanks. */
 	for (cy = sy; cy < sy+height, cy++) {
-		memset_io(MBPP_SCREEN_RAM_START + (cy * SCREEN_WIDTH) + sx, ' ', width);
+		memset_io(MBPP_SCREEN_RAM_START + (cy * SCREEN_WIDTH) + sx, screen_byte, width);
 	}
 	mbee_con_reset_ws();
+}
+
+static void mbee_console_clear(struct vc_data *vc, int sy, int sx, int height, int width)
+{
+	mbee_console_do_clear(sy, sx, height, width, 0, 
+		(vc->video_erase_char>>8)&0xFF,
+		vc->video_erase_char & 0xFF);
 }
 
 static void mbee_console_putc(struct vc_data *vc, int c, int ypos, int xpos)
@@ -131,17 +176,17 @@ static void mbee_console_putc(struct vc_data *vc, int c, int ypos, int xpos)
 	mbee_con_set_cscr(MBPP_CSCR_SLOWIO);
 	save_ap_reg = __raw_readb(MBPP_ALPHA_PLUS_REG);
 
-	// force the ATTR RAM
+	/* force the ATTR RAM */
 	__raw_writeb(MBPP_ALPHA_PLUS_REG, save_ap_reg|0x10);
 	__raw_writeb(MBPP_ATTR_RAM_START + offset, 0);
 	__raw_writeb(MBPP_ALPHA_PLUS_REG, save_ap_reg&~0x10);
 
-	// write the attribute
+	/* write the (colour) attribute */
 	__raw_writeb(MBPP_COLOR_PORT_REG, 0x40);
 	__raw_writeb(MBPP_PCG_RAM_START + offset, (c>>8) & 0xff);
 	__raw_writeb(MBPP_COLOR_PORT_REG, 0x0);
 
-	// write the character
+	/* write the character */
 	__raw_writeb(MBPP_SCREEN_RAM_START + offset, c&0xff);
 
 	mbee_con_reset_ws();
@@ -158,12 +203,12 @@ static void mbee_console_putcs(struct vc_data *vc, const unsigned short *s,
 	mbee_con_set_cscr(MBPP_CSCR_SLOWIO);
 	save_ap_reg = __raw_readb(MBPP_ALPHA_PLUS_REG);
 
-	// force the ATTR RAM
+	/* force the ATTR RAM */
 	__raw_writeb(MBPP_ALPHA_PLUS_REG, save_ap_reg|0x10);
 	memset_io(MBPP_ATTR_RAM_START + offset, 0, count);
 	__raw_writeb(MBPP_ALPHA_PLUS_REG, save_ap_reg&~0x10);
 
-	// write the attribute + screen RAM concurrently.
+	/* write the (colour) attribute + screen RAM concurrently. */
 	__raw_writeb(MBPP_COLOR_PORT_REG, 0x40);
 	for (ctr = 0; ctr < count; ctr++) {
 		c = scr_readw(s+ctr);
@@ -188,7 +233,6 @@ static void mbee_console_cursor(struct vc_data *c, int mode)
 	switch (mode) {
 	case CM_ERASE:
 		/* turn off the cursor */
-		// set no cursor in R10.
 		__raw_writeb(MBPP_CRTC_ADDR_REG, CRTC_CURSOR_START);
 		__raw_writeb(MBPP_CRTC_DATA_REG, 0x20);
 		break;
@@ -257,7 +301,8 @@ static u8 mbee_console_build_attr(struct vc_data *c, u8 color, u8 intensity,
 	/* the microbee colour byte is actually flipped on the lower 3 bits
 	 * of each nibble compared to VGA's 16 colour palette.
 	 *
-	 * because everybody kinda expects VGA-esque colours, we'll flip them now.
+	 * because everybody kinda expects VGA-esque colours, we'll flip them 
+ 	 * now.
 	 *
 	 * (At least the foreground & background are in the same order)
 	*/
@@ -268,26 +313,72 @@ static u8 mbee_console_build_attr(struct vc_data *c, u8 color, u8 intensity,
 	return attr;
 }
 
-/* Note for myself on what needs to be done still...
+static int mbee_console_scroll(struct vc_data *vc, int t, int b, int dir,
+		int lines)
+{
+	int	s_offset = 0, d_offset = 0;
+	int	clr_y = 0;
+	int	scroll_region_size = (b-t-lines);
+	int	bcount = scroll_region_size * SCREEN_WIDTH;
 
-	int	(*con_scroll)(struct vc_data *, int, int, int, int);
-	void	(*con_bmove)(struct vc_data *, int, int, int, int, int, int);
-	int	(*con_switch)(struct vc_data *);
-	int	(*con_blank)(struct vc_data *, int, int);
-	int	(*con_font_set)(struct vc_data *, struct console_font *, unsigned);
-	int	(*con_font_get)(struct vc_data *, struct console_font *);
-	int	(*con_font_default)(struct vc_data *, struct console_font *, char *);
-	int	(*con_font_copy)(struct vc_data *, int);
-	int     (*con_resize)(struct vc_data *, unsigned int, unsigned int,
-			       unsigned int);
-	int	(*con_set_palette)(struct vc_data *, unsigned char *);
-	int	(*con_scrolldelta)(struct vc_data *, int);
-	int	(*con_set_origin)(struct vc_data *);
-	void	(*con_save_screen)(struct vc_data *);
-	u8	(*con_build_attr)(struct vc_data *, u8, u8, u8, u8, u8, u8);
-	void	(*con_invert_region)(struct vc_data *, u16 *, int);
-	u16    *(*con_screen_pos)(struct vc_data *, int);
-	unsigned long (*con_getxy)(struct vc_data *, unsigned long, int *, int *);
+	if (dir == SM_UP) {
+		s_offset = (SCREEN_WIDTH * (t + lines));
+		d_offset = (SCREEN_WIDTH * t);
+		clr_y = b-lines;
+	} else {
+		s_offset = (SCREEN_WIDTH * t);
+		d_offset = (SCREEN_WIDTH * (t + lines));
+		clr_y = t;
+	}
+	/* shunt the data around - character data first */
+	mbee_con_set_cscr(MBPP_CSCR_SLOWIO);
+
+	/* attribute memory first */
+	__raw_writeb(MBPP_ALPHA_PLUS_REG, save_ap_reg|0x10); //set the Attribute ram access bit..
+	memmove(MBPP_PCG_RAM_START + d, MBPP_PCG_RAM_START + s, bcount);
+	__raw_writeb(MBPP_ALPHA_PLUS_REG, save_ap_reg&~0x10); //set the Attribute ram access bit..
+
+	/* reset the colour */
+	__raw_writeb(MBPP_COLOR_PORT_REG, 0x40);
+	memmove(MBPP_PCG_RAM_START + d, MBPP_PCG_RAM_START + s, bcount);
+	__raw_writeb(MBPP_COLOR_PORT_REG, 0x0);
+
+	/* shunt the data around */
+	memmove(MBPP_SCREEN_RAM_START + s, MBPP_SCREEN_RAM_START+d, bcount);
+	mbee_con_reset_ws();
+
+	/* now, clear the scrolled block */
+	mbee_console_clear(vc, clr_y, 0, lines, vc->vc_cols);
+
+	/* return 0 so vt updates it's internal state. */
+	return 0;
+}
+
+static int mbee_console_switch(struct vc_data *c)
+{
+	/* no state saving required (since we only have one mode), but
+	 * get VT to redraw us. */
+	return 1;
+}
+
+static int mbee_console_blank(struct vc_data *c, int blank, int mode_switch)
+{
+	if (blank) {
+		mbee_console_do_clear(0, 0, SCREEN_HEIGHT, SCREEN_WIDTH,
+			0, 0, ' ');
+		return 0;
+	}
+	return 1;
+}
+
+static int mbee_console_scrolldelta(struct vc_data *vc, int lines)
+{
+        /* there is no off-screen memory, so we can't scroll back */
+        return 0;
+}
+
+
+/* Note for myself on what needs to be done still...
 	
 	 * Prepare the console for the debugger.  This includes, but is not
 	 * limited to, unblanking the console, loading an appropriate
@@ -310,7 +401,10 @@ const struct consw mbee_con = {
 	.con_putc =		mbee_console_putc,
 	.con_putcs = 		mbee_console_putcs,
 	.con_cursor = 		mbee_console_cursor,
-
+	.con_scroll =		mbee_console_scroll,
+	.con_switch =		mbee_console_switch,
+	.con_blank =		mbee_console_blank,
+	.con_scrolldelta =	mbee_console_scrolldelta,
 	.con_build_attr =	mbee_console_build_attr,
 };
 EXPORT_SYMBOL(mbee_con);

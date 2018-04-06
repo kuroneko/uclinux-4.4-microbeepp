@@ -62,6 +62,13 @@ config MDA_CONSOLE
 
 	  If unsure, say N.
 
+config MBEE_CONSOLE
+	bool "Microbee Video Console" if MICROBEEPP
+	default y
+	help
+	  Say Y here if you want the console on the Microbee video 
+  	  output.  You probably want to say Y here.
+
 config SGI_NEWPORT_CONSOLE
         tristate "SGI Newport Console support"
         depends on SGI_IP22 
@@ -72,7 +79,7 @@ config SGI_NEWPORT_CONSOLE
 
 config DUMMY_CONSOLE
 	bool
-	depends on VGA_CONSOLE!=y || SGI_NEWPORT_CONSOLE!=y 
+	depends on VGA_CONSOLE!=y || SGI_NEWPORT_CONSOLE!=y
 	default y
 
 config DUMMY_CONSOLE_COLUMNS
