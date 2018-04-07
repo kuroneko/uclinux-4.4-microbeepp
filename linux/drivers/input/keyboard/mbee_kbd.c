@@ -155,6 +155,8 @@ static void mbee_kbd_poll(struct input_polled_dev *dev)
 	/* ok - LPEN_FULL is set - something was held down.  Scan the keyboard
 	 * matrix
 	*/
+
+	__raw_writeb(1, MBPP_FONT_ROM_REG);
 	for (c = 0; c < MBPP_KBD_COLS; c++) {
 		for (r = 0; r < MBPP_KBD_ROWS; r++) {
 			keystate = read_key(KEY_ADDR(c,r));
@@ -163,6 +165,10 @@ static void mbee_kbd_poll(struct input_polled_dev *dev)
 			}
 		}
 	}
+	__raw_writeb(0, MBPP_FONT_ROM_REG);
+	/* and reset the LPEN register so the fast path works next poll */
+	__raw_writeb(CRTC_REG_LPEN_L, MBPP_CRTC_ADDR_REG);
+	c = __raw_readb(MBPP_CRTC_DATA_REG);
 all_keys_up:
 	mbee_con_reset_cscr(&_cscr_state);
 			
