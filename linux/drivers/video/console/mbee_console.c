@@ -52,56 +52,17 @@
 #include <linux/memory.h>
 #include <linux/module.h>
 #include <asm/io.h>
+#include <asm/cacheflush.h>
+#include <asm/microbeepp.h>
 
 #include <linux/font.h>
-
-#define MBPP_ALPHA_PLUS_REG 	0x01FC01Cu
-#define MBPP_COLOR_PORT_REG	0x01FC008u
-#define MBPP_FONT_ROM_REG 	0x01FC00Bu
-#define MBPP_CRTC_ADDR_REG	0x01FC00Cu
-#define MBPP_CRTC_DATA_REG	0x01FC00Du
-
-#define MBPP_SCREEN_RAM_START	0x01FF000u
-#define MBPP_ATTR_RAM_START	0x01FF000u
-#define MBPP_PCG_RAM_START	0x01FF800u
-
-#define MCF_FLEX_CSAR1_OFFSET	0x8C
-#define MCF_FLEX_CSMR1_OFFSET	0x90
-#define MCF_FLEX_CSCR1_OFFSET	0x94
-
-#define MCF_CSCR_WS_MASK	0x0000FC00u
-#define MCF_CSCR_WS_SHIFT	10
 
 #define CRTC_CURSOR_START	10
 #define CRTC_CURSOR_END		11
 #define CRTC_CURSOR_POSITION_H	14
 #define CRTC_CURSOR_POSITION_L	15
 
-static u32 original_cscr1;
-static unsigned long 	irq_flags;
-
-static inline void mbee_con_set_cscr(u32 new_cscr1)
-{
-	local_irq_save(irq_flags);
-	local_irq_disable();
-
-	__raw_writew(new_cscr1, MCF_IPSBAR + MCF_FLEX_CSCR1_OFFSET);
-}
-
-static inline void mbee_con_reset_ws(void)
-{
-	__raw_writew(original_cscr1, MCF_IPSBAR + MCF_FLEX_CSCR1_OFFSET);
-	local_irq_restore(irq_flags);
-}
-
-/* 300ns Access time */
-#define MBPP_CSCR_SLOWIO		0x00d40
-/* //0x155D40;	//0x005140; */
-
-/* 775ns (yes, I know... its horrible, but cant do anything about that...)
-   Access time */
-#define MBPP_CSCR_SLOWACCESS	0x00d40
-/*	//0x1FFD40; */
+static struct mbee_cscr_state	mbee_con_cscr_state;
 
 #define SCREEN_WIDTH		80
 #define SCREEN_HEIGHT		24
@@ -116,8 +77,6 @@ static inline void mbee_con_reset_ws(void)
 static const char *mbee_console_startup(void)
 {
 	const char *display_desc = "microbee console";
-	// save our start-up CSCR1 configuration so we can set it back at any time.
-	original_cscr1 = __raw_readl(MCF_IPSBAR + MCF_FLEX_CSCR1_OFFSET);
 
 	return display_desc;
 }
@@ -143,28 +102,32 @@ static void mbee_console_do_clear(int sy, int sx, int height, int width,
 	
 	int 		cy;
 
-	mbee_con_set_cscr(MBPP_CSCR_SLOWIO);
+	mbee_con_set_cscr(&mbee_con_cscr_state, MBPP_CSCR_SLOWIO);
 	save_ap_reg = __raw_readb(MBPP_ALPHA_PLUS_REG);
 
 	/* reset the attribute (PCG Bank) */
+	flush_dcache_range(MBPP_ATTR_RAM_START, 0x800);
 	__raw_writeb(save_ap_reg|0x10, MBPP_ALPHA_PLUS_REG); /* set the Attribute ram access bit.. */
 	for (cy = sy; cy < sy+height; cy++) {
 		memset_io(MBPP_ATTR_RAM_START + (cy * SCREEN_WIDTH) + sx, attr_byte, width);
 	}
+	flush_dcache_range(MBPP_ATTR_RAM_START, 0x800);
 	__raw_writeb(save_ap_reg&~0x10, MBPP_ALPHA_PLUS_REG); /* set the Attribute ram access bit.. */
 
 	/* reset the colour */
+	flush_dcache_range(MBPP_PCG_RAM_START, 0x800);
 	__raw_writeb(0x40, MBPP_COLOR_PORT_REG);
 	for (cy = sy; cy < sy+height; cy++) {
 		memset_io(MBPP_PCG_RAM_START + (cy * SCREEN_WIDTH) + sx, color_byte, width);
 	}
+	flush_dcache_range(MBPP_PCG_RAM_START, 0x800);
 	__raw_writeb(0x00, MBPP_COLOR_PORT_REG);
 
 	/* fill the area with blanks. */
 	for (cy = sy; cy < sy+height; cy++) {
 		memset_io(MBPP_SCREEN_RAM_START + (cy * SCREEN_WIDTH) + sx, screen_byte, width);
 	}
-	mbee_con_reset_ws();
+	mbee_con_reset_cscr(&mbee_con_cscr_state);
 }
 
 static void mbee_console_clear(struct vc_data *vc, int sy, int sx, int height, int width)
@@ -179,23 +142,27 @@ static void mbee_console_putc(struct vc_data *vc, int c, int ypos, int xpos)
 	u8 save_ap_reg;
 	u16	offset = ypos * SCREEN_WIDTH + xpos;
 
-	mbee_con_set_cscr(MBPP_CSCR_SLOWIO);
+	mbee_con_set_cscr(&mbee_con_cscr_state, MBPP_CSCR_SLOWIO);
 	save_ap_reg = __raw_readb(MBPP_ALPHA_PLUS_REG);
 
 	/* force the ATTR RAM */
+	flush_dcache_range(MBPP_ATTR_RAM_START, 0x800);
 	__raw_writeb(save_ap_reg|0x10, MBPP_ALPHA_PLUS_REG);
 	__raw_writeb(0, MBPP_ATTR_RAM_START + offset);
+	flush_dcache_range(MBPP_ATTR_RAM_START, 0x800);
 	__raw_writeb(save_ap_reg&~0x10, MBPP_ALPHA_PLUS_REG);
 
 	/* write the (colour) attribute */
+	flush_dcache_range(MBPP_PCG_RAM_START, 0x800);
 	__raw_writeb(0x40, MBPP_COLOR_PORT_REG);
 	__raw_writeb((c>>8)&0xFF, MBPP_PCG_RAM_START + offset);
+	flush_dcache_range(MBPP_PCG_RAM_START, 0x800);
 	__raw_writeb(0x0, MBPP_COLOR_PORT_REG);
 
 	/* write the character */
 	__raw_writeb(c & 0xFF, MBPP_SCREEN_RAM_START + offset);
 
-	mbee_con_reset_ws();
+	mbee_con_reset_cscr(&mbee_con_cscr_state);
 }
 
 static void mbee_console_putcs(struct vc_data *vc, const unsigned short *s,
@@ -206,23 +173,27 @@ static void mbee_console_putcs(struct vc_data *vc, const unsigned short *s,
 	int ctr;
 	int c;
 
-	mbee_con_set_cscr(MBPP_CSCR_SLOWIO);
+	mbee_con_set_cscr(&mbee_con_cscr_state, MBPP_CSCR_SLOWIO);
 	save_ap_reg = __raw_readb(MBPP_ALPHA_PLUS_REG);
 
 	/* force the ATTR RAM */
+	flush_dcache_range(MBPP_ATTR_RAM_START, 0x800);
 	__raw_writeb(save_ap_reg|0x10, MBPP_ALPHA_PLUS_REG);
 	memset_io(MBPP_ATTR_RAM_START + offset, 0, count);
+	flush_dcache_range(MBPP_ATTR_RAM_START, 0x800);
 	__raw_writeb(save_ap_reg&~0x10, MBPP_ALPHA_PLUS_REG);
 
 	/* write the (colour) attribute + screen RAM concurrently. */
+	flush_dcache_range(MBPP_PCG_RAM_START, 0x800);
 	__raw_writeb(0x40, MBPP_COLOR_PORT_REG);
 	for (ctr = 0; ctr < count; ctr++) {
 		c = scr_readw(s+ctr);
 		__raw_writeb((c>>8)&0xFF, MBPP_PCG_RAM_START+offset+ctr);
 		__raw_writeb(c&0xFF, MBPP_SCREEN_RAM_START+offset+ctr);
 	}
+	flush_dcache_range(MBPP_SCREEN_RAM_START, 0x1000);
 	__raw_writeb(0x0, MBPP_COLOR_PORT_REG);
-	mbee_con_reset_ws();
+	mbee_con_reset_cscr(&mbee_con_cscr_state);
 }
 
 inline static void mbee_console_set_cursor_size(u8 start, u8 end)
@@ -238,7 +209,7 @@ static void mbee_console_cursor(struct vc_data *c, int mode)
 {
 	int cursoffs = ((c->vc_pos - c->vc_visible_origin) / 2);
 
-	mbee_con_set_cscr(MBPP_CSCR_SLOWIO);
+	mbee_con_set_cscr(&mbee_con_cscr_state, MBPP_CSCR_SLOWIO);
 	switch (mode) {
 	case CM_ERASE:
 		/* turn off the cursor */
@@ -275,7 +246,7 @@ static void mbee_console_cursor(struct vc_data *c, int mode)
 			break;
 		}
 	}
-	mbee_con_reset_ws();
+	mbee_con_reset_cscr(&mbee_con_cscr_state);
 }
 
 static u8 mbee_console_build_attr(struct vc_data *c, u8 color, u8 intensity,
@@ -326,22 +297,26 @@ static int mbee_console_scroll(struct vc_data *vc, int t, int b, int dir,
 		clr_y = t;
 	}
 	/* shunt the data around - character data first */
-	mbee_con_set_cscr(MBPP_CSCR_SLOWIO);
+	mbee_con_set_cscr(&mbee_con_cscr_state, MBPP_CSCR_SLOWIO);
 
 	/* attribute memory first */
+	flush_dcache_range(MBPP_ATTR_RAM_START, 0x800);
 	save_ap_reg = __raw_readb(MBPP_ALPHA_PLUS_REG);
 	__raw_writeb(save_ap_reg|0x10, MBPP_ALPHA_PLUS_REG); //set the Attribute ram access bit..
-	memmove((void *)MBPP_PCG_RAM_START + d_offset, (void *)MBPP_PCG_RAM_START + s_offset, bcount);
+	memmove((void *)MBPP_ATTR_RAM_START + d_offset, (void *)MBPP_PCG_RAM_START + s_offset, bcount);
+	flush_dcache_range(MBPP_ATTR_RAM_START, 0x800);
 	__raw_writeb(save_ap_reg&~0x10, MBPP_ALPHA_PLUS_REG); //set the Attribute ram access bit..
 
 	/* reset the colour */
+	flush_dcache_range(MBPP_PCG_RAM_START, 0x800);
 	__raw_writeb(0x40, MBPP_COLOR_PORT_REG);
 	memmove((void *)MBPP_PCG_RAM_START + d_offset, (void *)MBPP_PCG_RAM_START + s_offset, bcount);
+	flush_dcache_range(MBPP_PCG_RAM_START, 0x800);
 	__raw_writeb(0x00, MBPP_COLOR_PORT_REG);
 
 	/* shunt the data around */
 	memmove((void *)MBPP_SCREEN_RAM_START + d_offset, (void *)MBPP_SCREEN_RAM_START + s_offset, bcount);
-	mbee_con_reset_ws();
+	mbee_con_reset_cscr(&mbee_con_cscr_state);
 
 	/* now, clear the scrolled block */
 	mbee_console_clear(vc, clr_y, 0, lines, vc->vc_cols);

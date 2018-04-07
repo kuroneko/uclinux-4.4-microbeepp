@@ -719,4 +719,12 @@ config KEYBOARD_BCM
 	  To compile this driver as a module, choose M here: the
 	  module will be called bcm-keypad.
 
+config KEYBOARD_MBEE
+	tristate "Microbee Keyboard driver"
+	depends on MICROBEEPP
+	select INPUT_POLLDEV
+	help
+	  Say Y here if you have a Microbee Premium Plus and want to use 
+	  the keyboard
+
 endif
