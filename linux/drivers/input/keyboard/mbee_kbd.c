@@ -194,7 +194,7 @@ all_keys_up:
 		input_sync(dev->input);
 }
 
-static int __init mbee_kbd_probe(struct platform_device *pdev)
+static int mbee_kbd_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
         struct input_polled_dev *poll_dev;
