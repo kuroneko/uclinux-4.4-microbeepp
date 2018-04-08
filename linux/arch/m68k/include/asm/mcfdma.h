@@ -17,6 +17,18 @@
  *	Define the DMA register set addresses.
  *      Note: these are longword registers, use unsigned long as data type
  */
+#ifdef CONFIG_M5225x
+/*
+ *	MCF5225x has a slightly different register layout
+ */
+#define	MCFDMA_SAR		0x00		/* DMA source address (r/w) */
+#define	MCFDMA_DAR		0x01		/* DMA destination adr (r/w) */
+/* these are word registers, use unsigned short data type */
+#define	MCFDMA_BCR		0x05		/* DMA byte count reg (r/w) */
+#define	MCFDMA_DCR		0x06		/* DMA control reg (r/w) */
+/* these are byte registers, use unsiged char data type */
+#define	MCFDMA_DSR		0x08		/* DMA status reg (r/w) */
+#else
 #define	MCFDMA_SAR		0x00		/* DMA source address (r/w) */
 #define	MCFDMA_DAR		0x01		/* DMA destination adr (r/w) */
 /* these are word registers, use unsigned short data type */
@@ -25,6 +37,7 @@
 /* these are byte registers, use unsiged char data type */
 #define	MCFDMA_DSR		0x10		/* DMA status reg (r/w) */
 #define	MCFDMA_DIVR		0x14		/* DMA interrupt vec (r/w) */
+#endif
 
 /*
  *	Bit definitions for the DMA Control Register (DCR).

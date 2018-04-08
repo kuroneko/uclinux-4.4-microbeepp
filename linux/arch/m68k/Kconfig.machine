@@ -273,7 +273,7 @@ config FIREBEE
 
 config MICROBEEPP
 	bool "Microbee Premium Plus support"
-	depends on M528x
+	depends on M5225x
 	help
 	  Support for the Microbee Technology "Microbee Premium Plus" Kit Computer
 

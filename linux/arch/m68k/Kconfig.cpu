@@ -156,6 +156,14 @@ config M520x
 	help
 	   Freescale Coldfire 5207/5208 processor support.
 
+config M5225x
+	bool "MCF5225x"
+	depends on !MMU
+	select GENERIC_CLOCKEVENTS
+	select HAVE_IPSBAR
+	help
+	  Freescale Coldfire MCF5225x MCU support
+
 config M523x
 	bool "MCF523x"
 	depends on !MMU

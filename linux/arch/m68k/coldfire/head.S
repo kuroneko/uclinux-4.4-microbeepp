@@ -152,8 +152,10 @@ _start0:
 _start:
 	nop					/* filler */
 	movew	#0x2700, %sr			/* no interrupts */
+#ifdef CACHE_INIT
 	movel	#CACHE_INIT,%d0			/* disable cache */
 	movec	%d0,%CACR
+#endif
 	nop
 #if defined(CONFIG_UBOOT)
 	movel	%sp,_init_sp			/* save initial stack pointer */
@@ -184,7 +186,7 @@ _start:
 	GET_MEM_SIZE				/* macro code determines size */
 	addl	%a7,%d0
 	movel	%d0,_ramend			/* set end ram addr */
-
+#ifdef CACHE_INIT
 	/*
 	 *	Now that we know what the memory is, lets enable cache
 	 *	and get things moving. This is Coldfire CPU specific. Not
@@ -204,6 +206,7 @@ _start:
 #endif
 	movel	#CACHE_MODE,%d0			/* enable cache */
 	movec	%d0,%CACR
+#endif
 	nop
 
 #ifdef CONFIG_MMU

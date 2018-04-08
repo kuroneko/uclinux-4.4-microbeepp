@@ -21,6 +21,8 @@
 #include <asm/mcfintc.h>
 #elif defined(CONFIG_M520x)
 #include <asm/m520xsim.h>
+#elif defined(CONFIG_M5225x)
+#include <asm/m5225x.h>
 #elif defined(CONFIG_M523x)
 #include <asm/m523xsim.h>
 #include <asm/mcfintc.h>

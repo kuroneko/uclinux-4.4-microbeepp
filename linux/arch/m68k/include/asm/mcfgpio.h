@@ -105,7 +105,7 @@ static inline void gpio_free(unsigned gpio)
     defined(CONFIG_M520x) || defined(CONFIG_M523x) || \
     defined(CONFIG_M527x) || defined(CONFIG_M528x) || \
     defined(CONFIG_M53xx) || defined(CONFIG_M54xx) || \
-    defined(CONFIG_M5441x)
+    defined(CONFIG_M5441x) || defined(CONFIG_M5225x)
 
 /* These parts have GPIO organized by 8 bit ports */
 
@@ -140,7 +140,7 @@ static inline void gpio_free(unsigned gpio)
 #if defined(CONFIG_M520x) || defined(CONFIG_M523x) || \
     defined(CONFIG_M527x) || defined(CONFIG_M528x) || \
     defined(CONFIG_M53xx) || defined(CONFIG_M54xx) || \
-    defined(CONFIG_M5441x)
+    defined(CONFIG_M5441x) || defined(CONFIG_M5225x)
 /*
  * These parts have an 'Edge' Port module (external interrupt/GPIO) which uses
  * read-modify-write to change an output and a GPIO module which has separate

@@ -18,6 +18,7 @@ obj-$(CONFIG_COLDFIRE)	+= cache.o clk.o device.o dma.o entry.o vectors.o
 obj-$(CONFIG_M5206)	+= m5206.o timers.o intc.o reset.o
 obj-$(CONFIG_M5206e)	+= m5206.o timers.o intc.o reset.o
 obj-$(CONFIG_M520x)	+= m520x.o pit.o intc-simr.o reset.o
+obj-$(CONFIG_M5225x)	+= m5225x.o pit.o intc-2.o reset.o
 obj-$(CONFIG_M523x)	+= m523x.o pit.o dma_timer.o intc-2.o reset.o
 obj-$(CONFIG_M5249)	+= m5249.o timers.o intc.o intc-5249.o reset.o
 obj-$(CONFIG_M525x)	+= m525x.o timers.o intc.o intc-525x.o reset.o
